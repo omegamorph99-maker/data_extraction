@@ -1,0 +1,1371 @@
+# =====================================================
+# SAP MIGRATION REGISTRY SCRAPER
+# Version: V4.05 FINAL
+#
+# PART 1
+#
+# - Imports
+# - Settings
+# - Logging
+# - Browser
+# - Excel
+# - EIK handling
+# =====================================================
+
+
+from selenium import webdriver
+from selenium.webdriver.edge.options import Options
+
+from selenium.webdriver.common.by import By
+
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+from selenium.common.exceptions import TimeoutException
+
+
+from openpyxl import load_workbook
+
+
+from datetime import datetime
+
+
+import time
+import os
+import re
+
+
+
+# =====================================================
+# SETTINGS
+# =====================================================
+
+
+PROFILE_PATH = (
+    r"C:\Users\zalexandrov\selenium_edge_profile"
+)
+
+
+
+SEARCH_URL = (
+    "https://portal.registryagency.bg/CR/en/"
+    "Reports/VerificationPersonOrg"
+)
+
+
+
+EXCEL_FILE = (
+    r"W:\Sales\Zlatin\clients project"
+    r"\customers-15-06-2026.xlsx"
+)
+
+
+
+SHEET_NAME = (
+    "astra to SAP migration"
+)
+
+
+
+# =====================================================
+# EXCEL COLUMNS
+# =====================================================
+
+
+EIK_COLUMN = "E"
+
+
+PHONE_COLUMN = "F"
+FAX_COLUMN = "G"
+EMAIL_COLUMN = "H"
+WEBSITE_COLUMN = "I"
+
+STATUS_COLUMN = "J"
+
+
+
+# =====================================================
+# RUN SETTINGS
+# =====================================================
+
+
+START_ROW = 2
+
+
+END_ROW = 1200
+
+
+# After successful test:
+#
+# END_ROW = 7833
+
+
+
+SAVE_INTERVAL = 10
+
+
+
+# =====================================================
+# LOGGING
+# =====================================================
+
+
+def log(message):
+
+    print(
+        f"[{datetime.now():%H:%M:%S}] {message}"
+    )
+
+
+
+# =====================================================
+# BROWSER
+# =====================================================
+
+
+def open_browser():
+
+
+    log(
+        "Opening Edge..."
+    )
+
+
+
+    options = Options()
+
+
+
+    options.add_argument(
+        f"--user-data-dir={PROFILE_PATH}"
+    )
+
+
+
+    options.add_experimental_option(
+        "excludeSwitches",
+        [
+            "enable-logging"
+        ]
+    )
+
+
+
+    driver = webdriver.Edge(
+        options=options
+    )
+
+
+
+    driver.maximize_window()
+
+
+
+    wait = WebDriverWait(
+        driver,
+        30
+    )
+
+
+
+    log(
+        "Edge ready."
+    )
+
+
+
+    return driver, wait
+
+
+
+
+# =====================================================
+# EXCEL
+# =====================================================
+
+
+def open_excel():
+
+
+    log(
+        "Opening Excel..."
+    )
+
+
+
+    wb = load_workbook(
+        EXCEL_FILE
+    )
+
+
+
+    sheet = wb[
+        SHEET_NAME
+    ]
+
+
+
+    log(
+        f"Excel loaded. Rows: {sheet.max_row}"
+    )
+
+
+
+    return wb, sheet
+
+
+
+
+
+def save_excel(wb):
+
+
+    log(
+        "Saving Excel..."
+    )
+
+
+
+    wb.save(
+        EXCEL_FILE
+    )
+
+
+
+    if os.path.exists(EXCEL_FILE):
+
+        log(
+            "Excel save successful."
+        )
+
+    else:
+
+        log(
+            "Excel save FAILED."
+        )
+
+
+
+
+
+# =====================================================
+# EIK HANDLING
+# =====================================================
+
+
+def get_eik(sheet, row):
+
+
+    value = sheet[
+        f"{EIK_COLUMN}{row}"
+    ].value
+
+
+
+    if value is None:
+
+        return None
+
+
+
+    return str(
+        value
+    ).strip()
+
+
+
+
+
+def get_rows(sheet):
+
+
+    rows = []
+
+
+
+    for row in range(
+        START_ROW,
+        END_ROW + 1
+    ):
+
+
+
+        eik = get_eik(
+            sheet,
+            row
+        )
+
+
+
+        if eik:
+
+
+            rows.append(
+                (
+                    row,
+                    eik
+                )
+            )
+
+
+
+    return rows
+
+# =====================================================
+# SAP MIGRATION REGISTRY SCRAPER
+# Version: V4.05 FINAL
+#
+# PART 2
+#
+# - Registry navigation
+# - Cookies
+# - Company search
+# - Result detection
+# =====================================================
+
+
+
+# =====================================================
+# REGISTRY OPEN
+# =====================================================
+
+
+def open_registry(driver):
+
+
+    log(
+        "Opening Registry..."
+    )
+
+
+
+    driver.get(
+        SEARCH_URL
+    )
+
+
+
+    log(
+        "Registry loaded."
+    )
+
+
+
+
+
+# =====================================================
+# COOKIES
+# =====================================================
+
+
+def accept_cookies(driver):
+
+
+    try:
+
+
+        button = WebDriverWait(
+            driver,
+            5
+        ).until(
+            EC.element_to_be_clickable(
+                (
+                    By.CSS_SELECTOR,
+                    "#cookieInfo button"
+                )
+            )
+        )
+
+
+
+        button.click()
+
+
+
+        log(
+            "Cookies accepted."
+        )
+
+
+
+    except:
+
+
+        log(
+            "Cookie popup not shown."
+        )
+
+
+
+
+
+# =====================================================
+# SEARCH COMPANY
+# =====================================================
+
+
+def search_company(driver, wait, eik):
+
+
+    log(
+        f"Searching company {eik}"
+    )
+
+
+
+    # Select Legal Entity
+
+
+    wait.until(
+        EC.element_to_be_clickable(
+            (
+                By.CSS_SELECTOR,
+                "label[for='CompanyFormId']"
+            )
+        )
+    ).click()
+
+
+
+    # EIK field
+
+
+    field = wait.until(
+        EC.presence_of_element_located(
+            (
+                By.ID,
+                "searchCriteria_ident"
+            )
+        )
+    )
+
+
+
+    field.clear()
+
+
+
+    field.send_keys(
+        eik
+    )
+
+
+
+    # Search button
+
+
+    wait.until(
+        EC.element_to_be_clickable(
+            (
+                By.XPATH,
+                "//button[contains(.,'Search')]"
+            )
+        )
+    ).click()
+
+
+
+    log(
+        "Search submitted."
+    )
+
+
+
+
+
+# =====================================================
+# CHECK SEARCH RESULT
+# =====================================================
+
+
+def company_found(driver):
+
+
+    try:
+
+
+        WebDriverWait(
+            driver,
+            10
+        ).until(
+            EC.presence_of_element_located(
+                (
+                    By.XPATH,
+                    "//a[contains(@href,'ActiveConditionTabResult')]"
+                )
+            )
+        )
+
+
+
+        return True
+
+
+
+    except TimeoutException:
+
+
+        return False
+
+
+
+
+
+# =====================================================
+# OPEN COMPANY RESULT
+# =====================================================
+
+
+def open_company_page(driver, wait):
+
+
+    log(
+        "Opening company page..."
+    )
+
+
+
+    old_tabs = driver.window_handles
+
+
+
+    link = wait.until(
+        EC.element_to_be_clickable(
+            (
+                By.XPATH,
+                "//a[contains(@href,'ActiveConditionTabResult')]"
+            )
+        )
+    )
+
+
+
+    link.click()
+
+
+
+    # Wait for new tab
+
+
+    wait.until(
+        lambda d:
+        len(d.window_handles) > len(old_tabs)
+    )
+
+
+
+    new_tab = [
+
+        tab
+
+        for tab in driver.window_handles
+
+        if tab not in old_tabs
+
+    ][0]
+
+
+
+    driver.switch_to.window(
+        new_tab
+    )
+
+
+
+    wait.until(
+        lambda d:
+        "ActiveConditionTabResult"
+        in d.current_url
+    )
+
+
+
+    log(
+        "Company URL loaded."
+    )
+
+
+    log(
+        driver.current_url
+    )
+
+# =====================================================
+# SAP MIGRATION REGISTRY SCRAPER
+# Version: V4.05 FINAL
+#
+# PART 3
+#
+# - Company data loading
+# - Data extraction
+# =====================================================
+
+
+
+# =====================================================
+# WAIT FOR COMPANY DATA
+# =====================================================
+
+
+def wait_company_data(driver, wait):
+
+
+    log(
+        "Waiting for company data..."
+    )
+
+
+
+    wait.until(
+        EC.presence_of_element_located(
+            (
+                By.CLASS_NAME,
+                "record-container--preview"
+            )
+        )
+    )
+
+
+
+    log(
+        "Company data loaded."
+    )
+
+
+
+
+
+# =====================================================
+# EXTRACT COMPANY DATA
+# =====================================================
+
+
+def extract_data(driver):
+
+
+    log(
+        "Extracting company fields..."
+    )
+
+
+
+    containers = driver.find_elements(
+        By.CLASS_NAME,
+        "record-container--preview"
+    )
+
+
+
+    texts = []
+
+
+
+    for container in containers:
+
+
+        text = container.text.strip()
+
+
+
+        if text:
+
+
+            texts.append(
+                text
+            )
+
+
+
+    full_text = "\n".join(
+        texts
+    )
+
+
+
+    data = {
+
+
+        "phone": "",
+
+
+        "fax": "",
+
+
+        "email": "",
+
+
+        "website": ""
+
+
+    }
+
+
+
+
+
+    # -----------------------------
+    # PHONE
+    # -----------------------------
+
+
+    phone = re.search(
+        r"Phone\s*:?\s*([^\n]+)",
+        full_text,
+        re.IGNORECASE
+    )
+
+
+
+    if phone:
+
+
+        data["phone"] = (
+            phone.group(1)
+            .strip()
+        )
+
+
+
+
+
+    # -----------------------------
+    # FAX
+    # -----------------------------
+
+
+    fax = re.search(
+        r"Fax\s*:?\s*([^\n]+)",
+        full_text,
+        re.IGNORECASE
+    )
+
+
+
+    if fax:
+
+
+        data["fax"] = (
+            fax.group(1)
+            .strip()
+        )
+
+
+
+
+
+    # -----------------------------
+    # EMAIL
+    # -----------------------------
+
+
+    email = re.search(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+        full_text
+    )
+
+
+
+    if email:
+
+
+        data["email"] = (
+            email.group(0)
+            .strip()
+        )
+
+
+
+
+
+    # -----------------------------
+    # WEBSITE
+    # -----------------------------
+
+
+    website = re.search(
+        r"(https?://[^\s]+|www\.[^\s]+)",
+        full_text
+    )
+
+
+
+    if website:
+
+
+        data["website"] = (
+            website.group(0)
+            .strip()
+        )
+
+
+
+
+
+    print()
+
+
+    print(
+        "========== EXTRACTED DATA =========="
+    )
+
+
+    print(
+        data
+    )
+
+
+    print(
+        "===================================="
+    )
+
+
+
+    return data
+
+
+
+
+
+# =====================================================
+# CLOSE COMPANY TAB
+# =====================================================
+
+
+def close_company_page(driver):
+
+
+    if len(driver.window_handles) > 1:
+
+
+        log(
+            "Closing company tab."
+        )
+
+
+
+        driver.close()
+
+
+
+        driver.switch_to.window(
+            driver.window_handles[0]
+        )
+
+
+# =====================================================
+# SAP MIGRATION REGISTRY SCRAPER
+# Version: V4.05 FINAL
+#
+# PART 4
+#
+# - Excel writing
+# - Status handling
+# - NOT FOUND handling
+# =====================================================
+
+
+
+# =====================================================
+# WRITE COMPANY DATA
+# =====================================================
+
+
+def write_excel(sheet, row, data):
+
+
+    log(
+        f"Writing Excel row {row}"
+    )
+
+
+
+    sheet[
+        f"{PHONE_COLUMN}{row}"
+    ] = data.get(
+        "phone",
+        ""
+    )
+
+
+
+    sheet[
+        f"{FAX_COLUMN}{row}"
+    ] = data.get(
+        "fax",
+        ""
+    )
+
+
+
+    sheet[
+        f"{EMAIL_COLUMN}{row}"
+    ] = data.get(
+        "email",
+        ""
+    )
+
+
+
+    sheet[
+        f"{WEBSITE_COLUMN}{row}"
+    ] = data.get(
+        "website",
+        ""
+    )
+
+
+
+    sheet[
+        f"{STATUS_COLUMN}{row}"
+    ] = "DONE"
+
+
+
+
+    print()
+
+
+    print(
+        "Values written:"
+    )
+
+
+    print(
+        f"Phone: {data.get('phone','')}"
+    )
+
+
+    print(
+        f"Fax: {data.get('fax','')}"
+    )
+
+
+    print(
+        f"Email: {data.get('email','')}"
+    )
+
+
+    print(
+        f"Website: {data.get('website','')}"
+    )
+
+
+
+
+
+# =====================================================
+# WRITE NOT FOUND
+# =====================================================
+
+
+def write_not_found(sheet, row):
+
+
+    log(
+        f"Writing NOT FOUND for row {row}"
+    )
+
+
+
+    sheet[
+        f"{PHONE_COLUMN}{row}"
+    ] = ""
+
+
+
+    sheet[
+        f"{FAX_COLUMN}{row}"
+    ] = ""
+
+
+
+    sheet[
+        f"{EMAIL_COLUMN}{row}"
+    ] = ""
+
+
+
+    sheet[
+        f"{WEBSITE_COLUMN}{row}"
+    ] = ""
+
+
+
+    sheet[
+        f"{STATUS_COLUMN}{row}"
+    ] = "NOT FOUND"
+
+
+
+
+
+# =====================================================
+# STATUS CHECK
+# =====================================================
+
+
+def is_completed(sheet, row):
+
+
+    status = sheet[
+        f"{STATUS_COLUMN}{row}"
+    ].value
+
+
+
+    if status == "DONE":
+
+        return True
+
+
+
+    return False
+
+# =====================================================
+# SAP MIGRATION REGISTRY SCRAPER
+# Version: V4.05 FINAL
+#
+# PART 5
+#
+# - Processing loop
+# - Error handling
+# - Autosave
+# - Summary
+# - Main
+# =====================================================
+
+
+
+# =====================================================
+# PROCESS SINGLE ROW
+# =====================================================
+
+
+def process_row(
+        driver,
+        wait,
+        wb,
+        sheet,
+        row,
+        eik
+):
+
+
+    print()
+
+    print(
+        "=========================="
+    )
+
+
+    log(
+        f"Processing row {row}"
+    )
+
+
+    log(
+        f"EIK: {eik}"
+    )
+
+
+
+    try:
+
+
+        open_registry(
+            driver
+        )
+
+
+
+        accept_cookies(
+            driver
+        )
+
+
+
+        search_company(
+            driver,
+            wait,
+            eik
+        )
+
+
+
+        # Check if company exists
+
+
+        if not company_found(
+            driver
+        ):
+
+
+            log(
+                "Company not found."
+            )
+
+
+            write_not_found(
+                sheet,
+                row
+            )
+
+
+            save_excel(
+                wb
+            )
+
+
+            return "NOT FOUND"
+
+
+
+
+        # Open company page
+
+
+        open_company_page(
+            driver,
+            wait
+        )
+
+
+
+        wait_company_data(
+            driver,
+            wait
+        )
+
+
+
+        data = extract_data(
+            driver
+        )
+
+
+
+        write_excel(
+            sheet,
+            row,
+            data
+        )
+
+
+
+        save_excel(
+            wb
+        )
+
+
+
+        close_company_page(
+            driver
+        )
+
+
+
+        log(
+            "Row completed successfully."
+        )
+
+
+
+        return "DONE"
+
+
+
+
+    except Exception as e:
+
+
+        log(
+            f"ERROR processing row {row}: {e}"
+        )
+
+
+
+        close_company_page(
+            driver
+        )
+
+
+
+        return "ERROR"
+
+
+
+
+
+# =====================================================
+# MAIN
+# =====================================================
+
+
+def main():
+
+
+    driver, wait = open_browser()
+
+
+
+    successful = 0
+
+    not_found = 0
+
+    errors = 0
+
+
+
+    start_time = datetime.now()
+
+
+
+    try:
+
+
+        wb, sheet = open_excel()
+
+
+
+        rows = get_rows(
+            sheet
+        )
+
+
+
+        log(
+            f"Rows prepared: {len(rows)}"
+        )
+
+
+
+        for counter, (row, eik) in enumerate(rows, start=1):
+
+
+            result = process_row(
+                driver,
+                wait,
+                wb,
+                sheet,
+                row,
+                eik
+            )
+
+
+
+            if result == "DONE":
+
+                successful += 1
+
+
+
+            elif result == "NOT FOUND":
+
+                not_found += 1
+
+
+
+            else:
+
+                errors += 1
+
+
+
+
+            # Autosave
+
+
+            if counter % SAVE_INTERVAL == 0:
+
+
+                log(
+                    f"Autosave after {counter} rows."
+                )
+
+
+                save_excel(
+                    wb
+                )
+
+
+
+            time.sleep(2)
+
+
+
+
+
+        # Final save
+
+
+        save_excel(
+            wb
+        )
+
+
+
+        end_time = datetime.now()
+
+
+
+        print()
+
+        print(
+            "=========================="
+        )
+
+
+        log(
+            "SCRAPER FINISHED"
+        )
+
+
+        log(
+            f"Successful: {successful}"
+        )
+
+
+        log(
+            f"Not found: {not_found}"
+        )
+
+
+        log(
+            f"Errors: {errors}"
+        )
+
+
+        log(
+            f"Runtime: {end_time - start_time}"
+        )
+
+
+        print(
+            "=========================="
+        )
+
+
+
+    finally:
+
+
+        driver.quit()
+
+
+
+        log(
+            "Browser closed."
+        )
+
+
+
+
+
+# =====================================================
+# START PROGRAM
+# =====================================================
+
+
+if __name__ == "__main__":
+
+
+    main()
